@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CANVAS — Infinite Paint Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-deep:    #0a0b0d;
+      --bg-panel:   #111316;
+      --bg-surface: #181b20;
+      --bg-hover:   #1f2329;
+      --border:     #252930;
+      --border-hi:  #2e343d;
+      --accent:     #4f9eff;
+      --accent-dim: #2563b8;
+      --accent-glow:#4f9eff33;
+      --green:      #22d17a;
+      --red:        #ff4d4d;
+      --text-hi:    #e8eaed;
+      --text-mid:   #8b9099;
+      --text-lo:    #4a5060;
+      --radius:     6px;
+    }
+
+    html, body { height: 100%; background: var(--bg-deep); color: var(--text-hi); font-family: 'Syne', sans-serif; overflow: hidden; user-select: none; }
+
+    #app { display: grid; grid-template-rows: 44px 1fr; grid-template-columns: 60px 1fr 220px; height: 100vh; }
+
+    /* TITLE BAR */
+    #titlebar {
+      grid-column: 1 / -1;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 16px;
+      z-index: 100;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .brand-logo {
+      width: 26px; height: 26px;
+      background: var(--accent); border-radius: 7px;
+      position: relative; overflow: hidden; flex-shrink: 0;
+    }
+    .brand-logo::before {
+      content: ''; position: absolute;
+      width: 12px; height: 12px;
+      background: var(--bg-deep); border-radius: 3px;
+      transform: rotate(45deg); top: 7px; left: 7px;
+    }
+    .brand-name { font-size: 13px; font-weight: 800; letter-spacing: 0.14em; }
+    .brand-sep { color: var(--border-hi); font-size: 18px; }
+    .brand-file { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-mid); }
+    .tb-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+    .tb-btn {
+      height: 28px; padding: 0 10px;
+      border-radius: var(--radius); border: 1px solid var(--border-hi);
+      background: var(--bg-surface); color: var(--text-mid);
+      font-family: 'DM Mono', monospace; font-size: 10px;
+      cursor: pointer; display: flex; align-items: center; gap: 5px;
+      transition: all 0.15s; letter-spacing: 0.05em; white-space: nowrap;
+    }
+    .tb-btn:hover { background: var(--bg-hover); color: var(--text-hi); border-color: var(--accent); }
+    .tb-btn.primary { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600; }
+    .tb-btn.primary:hover { background: #6ab3ff; }
+    .tb-divider { width: 1px; height: 18px; background: var(--border); margin: 0 2px; }
+    #zoomDisplay { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-lo); min-width: 38px; text-align: center; }
+
+    /* LEFT TOOLBAR */
+    #toolpanel {
+      background: var(--bg-panel); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; align-items: center;
+      padding: 8px 0; gap: 2px; overflow-y: auto; overflow-x: hidden;
+    }
+    #toolpanel::-webkit-scrollbar { width: 0; }
+    .tool-group { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 0 6px; }
+    .tool-sep { width: 28px; height: 1px; background: var(--border); margin: 6px 0; }
+    .tool-btn {
+      width: 44px; height: 40px; border-radius: var(--radius);
+      border: none; background: transparent; color: var(--text-lo);
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      position: relative; transition: all 0.12s; flex-shrink: 0;
+    }
+    .tool-btn:hover { background: var(--bg-hover); color: var(--text-hi); }
+    .tool-btn.active { background: var(--accent-glow); color: var(--accent); border: 1px solid var(--accent-dim); }
+    .tool-btn.active::before {
+      content: ''; position: absolute; left: -6px; top: 50%; transform: translateY(-50%);
+      width: 3px; height: 16px; background: var(--accent); border-radius: 0 2px 2px 0;
+    }
+    .tool-btn[title]:hover::after {
+      content: attr(title); position: absolute; left: 54px; top: 50%; transform: translateY(-50%);
+      background: var(--bg-hover); border: 1px solid var(--border-hi); color: var(--text-hi);
+      font-family: 'DM Mono', monospace; font-size: 10px; padding: 4px 8px;
+      border-radius: var(--radius); white-space: nowrap; z-index: 9999; pointer-events: none;
+    }
+
+    /* CANVAS AREA */
+    #canvasWrap { position: relative; overflow: hidden; background: var(--bg-deep); }
+    canvas { display: block; position: absolute; top: 0; left: 0; cursor: none; }
+    canvas.bg-white { background: #ffffff; }
+    canvas.bg-black { background: #000000; }
+    canvas.bg-dark  { background: #111316; }
+
+    #activeToolBadge {
+      position: absolute; top: 12px; right: 12px;
+      background: rgba(17,19,22,0.8); backdrop-filter: blur(8px);
+      border: 1px solid var(--border-hi); border-radius: 20px;
+      padding: 4px 12px; font-family: 'DM Mono', monospace;
+      font-size: 10px; color: var(--accent); letter-spacing: 0.1em;
+      text-transform: uppercase; pointer-events: none;
+      display: flex; align-items: center; gap: 6px;
+    }
+    #activeToolBadge::before {
+      content: ''; width: 5px; height: 5px; border-radius: 50%;
+      background: var(--accent); display: block;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.2; } }
+
+    #statusbar {
+      position: absolute; bottom: 10px; left: 12px;
+      display: flex; align-items: center; gap: 10px;
+      font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-lo);
+      pointer-events: none;
+    }
+
+    /* RIGHT PANEL */
+    #rightpanel {
+      background: var(--bg-panel); border-left: 1px solid var(--border);
+      display: flex; flex-direction: column; overflow-y: auto;
+    }
+    #rightpanel::-webkit-scrollbar { width: 3px; }
+    #rightpanel::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
+    .panel-section { border-bottom: 1px solid var(--border); padding: 14px; }
+    .panel-label {
+      font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.14em;
+      text-transform: uppercase; color: var(--text-lo); margin-bottom: 10px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+
+    /* Color */
+    .color-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 5px; margin-bottom: 10px; }
+    .cswatch {
+      aspect-ratio: 1; border-radius: 5px; border: 2px solid transparent;
+      cursor: pointer; transition: all 0.12s;
+    }
+    .cswatch:hover { transform: scale(1.1); }
+    .cswatch.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+    .cswatch[data-color="#ffffff"] { box-shadow: inset 0 0 0 1px var(--border-hi); }
+    .cswatch[data-color="#ffffff"].active { box-shadow: inset 0 0 0 1px #ccc, 0 0 0 2px var(--accent-glow); }
+
+    .color-row { display: flex; align-items: center; gap: 8px; }
+    #colorPicker { width: 32px; height: 32px; border: none; border-radius: 5px; cursor: pointer; padding: 0; background: none; flex-shrink: 0; }
+    #colorPicker::-webkit-color-swatch-wrapper { padding: 0; border-radius: 5px; }
+    #colorPicker::-webkit-color-swatch { border: none; border-radius: 5px; }
+    .hex-input {
+      flex: 1; height: 32px; background: var(--bg-surface); border: 1px solid var(--border);
+      border-radius: var(--radius); color: var(--text-hi); font-family: 'DM Mono', monospace;
+      font-size: 11px; padding: 0 8px; outline: none; letter-spacing: 0.05em; min-width: 0;
+    }
+    .hex-input:focus { border-color: var(--accent); }
+
+    /* Brush */
+    .brush-row { display: flex; align-items: center; gap: 10px; }
+    .brush-range {
+      flex: 1; -webkit-appearance: none; height: 3px; border-radius: 2px;
+      background: var(--border-hi); outline: none; cursor: pointer;
+    }
+    .brush-range::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%;
+      background: var(--accent); cursor: pointer; border: 2px solid var(--bg-panel);
+      box-shadow: 0 0 6px var(--accent-glow);
+    }
+    #brushPreview {
+      width: 100%; height: 44px; background: var(--bg-surface);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      display: flex; align-items: center; justify-content: center; margin-top: 10px;
+    }
+    #brushPreviewDot { border-radius: 50%; transition: all 0.15s; }
+
+    /* Bg options */
+    .bg-options { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; }
+    .bg-btn {
+      height: 30px; border-radius: var(--radius); border: 1px solid var(--border);
+      font-family: 'DM Mono', monospace; font-size: 10px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      letter-spacing: 0.05em; transition: border-color 0.12s;
+    }
+    .bg-btn.bg-wh { background: #fff; color: #444; }
+    .bg-btn.bg-bk { background: #000; color: #888; border-color: #333; }
+    .bg-btn.bg-dk { background: var(--bg-surface); color: var(--text-mid); }
+    .bg-btn:hover { border-color: var(--accent); }
+
+    /* Toggle */
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; }
+    .toggle-label { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-mid); }
+    .toggle { width: 32px; height: 17px; background: var(--border-hi); border-radius: 9px; cursor: pointer; position: relative; border: none; transition: background 0.2s; flex-shrink: 0; }
+    .toggle.on { background: var(--accent); }
+    .toggle::after { content: ''; position: absolute; width: 11px; height: 11px; background: #fff; border-radius: 50%; top: 3px; left: 3px; transition: left 0.2s; }
+    .toggle.on::after { left: 18px; }
+
+    /* Actions */
+    .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+    .action-btn {
+      height: 30px; border-radius: var(--radius); border: 1px solid var(--border);
+      background: var(--bg-surface); color: var(--text-mid);
+      font-family: 'DM Mono', monospace; font-size: 10px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      gap: 5px; transition: all 0.12s; letter-spacing: 0.04em;
+    }
+    .action-btn:hover { background: var(--bg-hover); color: var(--text-hi); border-color: var(--accent); }
+    .action-btn.danger:hover { border-color: var(--red); color: var(--red); }
+    .action-btn.primary { grid-column: 1/-1; background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600; }
+    .action-btn.primary:hover { background: #6ab3ff; }
+
+    /* Shortcuts info */
+    .shortcut-list { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-lo); line-height: 2; }
+
+    /* OVERLAYS */
+    .custom-cursor { position: fixed; pointer-events: none; z-index: 9999; display: none; will-change: transform; }
+    .fill-preview { position: fixed; pointer-events: none; z-index: 9998; border-radius: 50%; border: 2px dashed var(--accent); background: var(--accent-glow); width: 20px; height: 20px; display: none; transform: translate(-10px,-10px); }
+    .move-preview { border: 1.5px dashed var(--accent); position: fixed; pointer-events: none; z-index: 9997; background: var(--accent-glow); display: none; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- TITLE BAR -->
+  <div id="titlebar">
+    <div class="brand">
+      <div class="brand-logo"></div>
+      <span class="brand-name">CANVAS</span>
+    </div>
+    <span class="brand-sep">/</span>
+    <span class="brand-file">untitled.cvs</span>
+    <div class="tb-actions">
+      <span id="zoomDisplay">100%</span>
+      <div class="tb-divider"></div>
+      <button class="tb-btn" onclick="undo()">
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 5H9a4 4 0 0 1 0 8H5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5 2L2 5l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Undo
+      </button>
+      <button class="tb-btn" onclick="redo()">
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M12 5H5a4 4 0 0 0 0 8h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M9 2l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Redo
+      </button>
+      <div class="tb-divider"></div>
+      <button class="tb-btn" onclick="toggleGrid()">
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="1.5" width="4" height="4" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="8.5" y="1.5" width="4" height="4" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="1.5" y="8.5" width="4" height="4" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="8.5" y="8.5" width="4" height="4" rx="1" stroke="currentColor" stroke-width="1.3"/></svg>
+        Grid
+      </button>
+      <button class="tb-btn" onclick="clearCanvas()">
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M5 4V2.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 .5.5V4m2 0l-.8 7.5a1 1 0 0 1-1 .9H5.3a1 1 0 0 1-1-.9L3.5 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        Clear
+      </button>
+      <div class="tb-divider"></div>
+      <button class="tb-btn primary" onclick="saveImage()">
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 2v7M4.5 6.5L7 9l2.5-2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 10v1.5a.5.5 0 0 0 .5.5h9a.5.5 0 0 0 .5-.5V10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        Export PNG
+      </button>
+    </div>
+  </div>
+
+  <!-- LEFT TOOLS -->
+  <div id="toolpanel">
+    <div class="tool-group">
+      <button class="tool-btn active" id="btn-pen" onclick="setTool('pen')" title="Pen">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><path d="M14.36 2.93l2.71 2.71c.39.39.39 1.03 0 1.42l-1.43 1.43-4.13-4.13 1.43-1.43c.39-.39 1.03-.39 1.42 0zM2 14.19V18h3.81l10.61-10.6-4.13-4.13L2 14.19z" fill="currentColor"/></svg>
+      </button>
+      <button class="tool-btn" id="btn-eraser" onclick="setTool('eraser')" title="Eraser">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><path d="M16 15H6.5L3 11.5 10.5 4 18 11.5 16 15Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8.5 13l4-4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      </button>
+      <button class="tool-btn" id="btn-fill" onclick="setTool('fill')" title="Fill">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><path d="M5 10l5-5 7 7a2 2 0 0 1 0 2.83l-2.17 2.17a2 2 0 0 1-2.83 0l-7-7z" stroke="currentColor" stroke-width="1.5" fill="currentColor" fill-opacity="0.3"/><circle cx="15.5" cy="15.5" r="2" fill="currentColor" opacity="0.6"/></svg>
+      </button>
+      <button class="tool-btn" id="btn-move" onclick="setTool('move')" title="Move">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><path d="M10 3L8 6h1.25v3.25H6V8L3 10l3 2v-1.25h3.25V14H8l2 3 2-3h-1.25v-3.25H14V14l3-2-3-2v1.25h-3.25V6H12L10 3z" fill="currentColor"/></svg>
+      </button>
+    </div>
+    <div class="tool-sep"></div>
+    <div class="tool-group">
+      <button class="tool-btn" id="btn-line" onclick="setTool('line')" title="Line">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><line x1="4" y1="16" x2="16" y2="4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <button class="tool-btn" id="btn-rectangle" onclick="setTool('rectangle')" title="Rectangle">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><rect x="3.5" y="5.5" width="13" height="9" rx="1.5" stroke="currentColor" stroke-width="1.7"/></svg>
+      </button>
+      <button class="tool-btn" id="btn-circle" onclick="setTool('circle')" title="Circle">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.7"/></svg>
+      </button>
+      <button class="tool-btn" id="btn-ellipse" onclick="setTool('ellipse')" title="Ellipse">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><ellipse cx="10" cy="10" rx="7" ry="4" stroke="currentColor" stroke-width="1.7"/></svg>
+      </button>
+      <button class="tool-btn" id="btn-triangle" onclick="setTool('triangle')" title="Triangle">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><polygon points="10,3 17,17 3,17" stroke="currentColor" stroke-width="1.7" fill="none"/></svg>
+      </button>
+      <button class="tool-btn" id="btn-polygon" onclick="setTool('polygon')" title="Polygon">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><polygon points="10,2 18,7 15,17 5,17 2,7" stroke="currentColor" stroke-width="1.7" fill="none"/></svg>
+      </button>
+      <button class="tool-btn" id="btn-star" onclick="setTool('star')" title="Star">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><polygon points="10,2 12.5,7.5 18,8 13.5,12 14.5,18 10,15 5.5,18 6.5,12 2,8 7.5,7.5" stroke="currentColor" stroke-width="1.7" fill="none"/></svg>
+      </button>
+      <button class="tool-btn" id="btn-heart" onclick="setTool('heart')" title="Heart">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><path d="M10 17S2 11 4.8 6.7C6.1 4.7 8.8 4.6 10 7.1 11.2 4.6 13.9 4.7 15.2 6.7 18 11 10 17 10 17Z" stroke="currentColor" stroke-width="1.7" fill="none"/></svg>
+      </button>
+      <button class="tool-btn" id="btn-diamond" onclick="setTool('diamond')" title="Diamond">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><polygon points="10,2 18,10 10,18 2,10" stroke="currentColor" stroke-width="1.7" fill="none"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- CANVAS -->
+  <div id="canvasWrap">
+    <canvas id="canvas" class="bg-dark"></canvas>
+    <div id="activeToolBadge">PEN</div>
+    <div id="statusbar">
+      <span id="coordDisplay">0, 0</span>
+      <span style="color:var(--border-hi)">·</span>
+      <span id="elemCount">0 elements</span>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div id="rightpanel">
+    <div class="panel-section">
+      <div class="panel-label">Color</div>
+      <div class="color-grid" id="colorGrid"></div>
+      <div class="color-row">
+        <input type="color" id="colorPicker" value="#4f9eff">
+        <input type="text" class="hex-input" id="hexInput" value="#4f9eff" maxlength="7" spellcheck="false">
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-label">
+        <span>Stroke</span>
+        <span id="brushSizeLabel" style="color:var(--text-mid)">5px</span>
+      </div>
+      <div class="brush-row">
+        <input type="range" class="brush-range" id="brushSize" min="1" max="50" value="5">
+      </div>
+      <div id="brushPreview"><div id="brushPreviewDot"></div></div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-label">Background</div>
+      <div class="bg-options">
+        <button class="bg-btn bg-dk" onclick="setCanvasBg('dark')">Dark</button>
+        <button class="bg-btn bg-wh" onclick="setCanvasBg('white')">White</button>
+        <button class="bg-btn bg-bk" onclick="setCanvasBg('black')">Black</button>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="toggle-row">
+        <span class="toggle-label">Show Grid</span>
+        <button class="toggle" id="gridToggle" onclick="toggleGrid()"></button>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-label">Actions</div>
+      <div class="action-grid">
+        <button class="action-btn" onclick="undo()">
+          <svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M2 5H9a4 4 0 0 1 0 8H5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5 2L2 5l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Undo
+        </button>
+        <button class="action-btn" onclick="redo()">
+          <svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M12 5H5a4 4 0 0 0 0 8h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M9 2l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Redo
+        </button>
+        <button class="action-btn danger" onclick="clearCanvas()">
+          <svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M5 4V2.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 .5.5V4m2 0l-.8 7.5a1 1 0 0 1-1 .9H5.3a1 1 0 0 1-1-.9L3.5 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          Clear
+        </button>
+        <button class="action-btn" onclick="saveImage()">
+          <svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M7 2v7M4.5 6.5L7 9l2.5-2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 10v1.5a.5.5 0 0 0 .5.5h9a.5.5 0 0 0 .5-.5V10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          Export
+        </button>
+      </div>
+    </div>
+
+    <div class="panel-section" style="flex:1">
+      <div class="panel-label">Shortcuts</div>
+      <div class="shortcut-list">
+        <div>Scroll — Zoom</div>
+        <div>Mid click — Pan</div>
+        <div>Fill closed pen — Color</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="fillPreview" class="fill-preview"></div>
+<div id="movePreview" class="move-preview"></div>
+
+<script>
+// ── UTILITIES ─────────────────────────────────────────────────────────────────
+
+function getPolygonPoints(x1,y1,x2,y2,sides=5){
+  const cx=(x1+x2)/2,cy=(y1+y2)/2,rx=Math.abs(x2-x1)/2,ry=Math.abs(y2-y1)/2,pts=[];
+  for(let i=0;i<sides;++i){const t=2*Math.PI*(i/sides)-Math.PI/2;pts.push({x:cx+Math.cos(t)*rx,y:cy+Math.sin(t)*ry});}
+  return pts;
+}
+function getStarPoints(x1,y1,x2,y2,points=5){
+  const cx=(x1+x2)/2,cy=(y1+y2)/2,rx=Math.abs(x2-x1)/2,ry=Math.abs(y2-y1)/2;
+  let pts=[],step=Math.PI/points;
+  for(let i=0;i<2*points;++i){const r=i%2===0?rx:rx/2,t=i*step-Math.PI/2;pts.push({x:cx+Math.cos(t)*r,y:cy+Math.sin(t)*(i%2===0?ry:ry/2)});}
+  return pts;
+}
+function isPenStrokeClosed(pts,thr=10){
+  if(!pts||pts.length<3)return false;
+  const dx=pts[0].x-pts[pts.length-1].x,dy=pts[0].y-pts[pts.length-1].y;
+  return Math.sqrt(dx*dx+dy*dy)<thr;
+}
+function isPointInPolygon(x,y,pts){
+  let inside=false;
+  for(let i=0,j=pts.length-1;i<pts.length;j=i++){
+    if(((pts[i].y>y)!==(pts[j].y>y))&&(x<(pts[j].x-pts[i].x)*(y-pts[i].y)/(pts[j].y-pts[i].y)+pts[i].x))inside=!inside;
+  }
+  return inside;
+}
+function drawCustomShape(ctx,el,fill=null){
+  if(el.type==="ellipse"){
+    const cx=(el.x1+el.x2)/2,cy=(el.y1+el.y2)/2,rx=Math.abs(el.x2-el.x1)/2,ry=Math.abs(el.y2-el.y1)/2;
+    ctx.save();ctx.beginPath();ctx.ellipse(cx,cy,rx,ry,0,0,Math.PI*2);
+    if(fill){ctx.fillStyle=fill;ctx.globalAlpha=1;ctx.fill();}ctx.stroke();ctx.restore();
+  }
+  if(el.type==="polygon"){
+    const pts=getPolygonPoints(el.x1,el.y1,el.x2,el.y2,el.sides||5);
+    ctx.save();ctx.beginPath();pts.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y));ctx.closePath();
+    if(fill){ctx.fillStyle=fill;ctx.globalAlpha=1;ctx.fill();}ctx.stroke();ctx.restore();
+  }
+  if(el.type==="star"){
+    const sp=getStarPoints(el.x1,el.y1,el.x2,el.y2,el.points||5);
+    ctx.save();ctx.beginPath();sp.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y));ctx.closePath();
+    if(fill){ctx.fillStyle=fill;ctx.globalAlpha=1;ctx.fill();}ctx.stroke();ctx.restore();
+  }
+  if(el.type==="heart"){
+    const x=(el.x1+el.x2)/2,y=(el.y1+el.y2)/2,w=Math.abs(el.x2-el.x1),h=Math.abs(el.y2-el.y1);
+    ctx.save();ctx.beginPath();
+    ctx.moveTo(x,y+h/4);ctx.bezierCurveTo(x+w/2,y-h/4,x+w,y+h/2,x,y+h);
+    ctx.bezierCurveTo(x-w,y+h/2,x-w/2,y-h/4,x,y+h/4);ctx.closePath();
+    if(fill){ctx.fillStyle=fill;ctx.globalAlpha=1;ctx.fill();}ctx.stroke();ctx.restore();
+  }
+  if(el.type==="diamond"){
+    const cx=(el.x1+el.x2)/2,cy=(el.y1+el.y2)/2,rx=Math.abs(el.x2-el.x1)/2,ry=Math.abs(el.y2-el.y1)/2;
+    ctx.save();ctx.beginPath();ctx.moveTo(cx,cy-ry);ctx.lineTo(cx+rx,cy);ctx.lineTo(cx,cy+ry);ctx.lineTo(cx-rx,cy);ctx.closePath();
+    if(fill){ctx.fillStyle=fill;ctx.globalAlpha=1;ctx.fill();}ctx.stroke();ctx.restore();
+  }
+}
+
+// ── SETUP ─────────────────────────────────────────────────────────────────────
+
+const canvasWrap=document.getElementById("canvasWrap");
+const canvas=document.getElementById("canvas");
+const ctx=canvas.getContext("2d");
+function resizeCanvas(){const r=canvasWrap.getBoundingClientRect();canvas.width=r.width;canvas.height=r.height;draw();}
+window.addEventListener("resize",resizeCanvas);
+setTimeout(resizeCanvas,60);
+
+// ── COLORS ────────────────────────────────────────────────────────────────────
+
+const COLORS=[
+  {name:"Ink",color:"#000000"},{name:"White",color:"#ffffff"},{name:"Slate",color:"#64748b"},{name:"Zinc",color:"#a1a1aa"},
+  {name:"Red",color:"#ef4444"},{name:"Orange",color:"#f97316"},{name:"Amber",color:"#f59e0b"},{name:"Yellow",color:"#eab308"},
+  {name:"Lime",color:"#84cc16"},{name:"Green",color:"#22c55e"},{name:"Cyan",color:"#06b6d4"},{name:"Blue",color:"#4f9eff"},
+];
+const colorGrid=document.getElementById("colorGrid");
+const colorPickerEl=document.getElementById("colorPicker");
+const hexInputEl=document.getElementById("hexInput");
+let selectedColor="#4f9eff";
+
+function nc(v){let c=v.toLowerCase();if(/^#[0-9a-f]{3}$/i.test(c))c="#"+c.substring(1).split("").map(x=>x+x).join("");return c;}
+function renderColorGrid(){
+  colorGrid.innerHTML="";
+  const cur=nc(selectedColor);
+  COLORS.forEach(({name,color})=>{
+    const sw=document.createElement("div");
+    sw.className="cswatch"+(nc(color)===cur?" active":"");
+    sw.style.background=color;sw.setAttribute("data-color",color);sw.title=name;
+    sw.onclick=()=>{selectedColor=color;colorPickerEl.value=color;hexInputEl.value=color;updateBrushPreview();renderColorGrid();};
+    colorGrid.appendChild(sw);
+  });
+}
+colorPickerEl.addEventListener("input",e=>{selectedColor=e.target.value;hexInputEl.value=e.target.value;updateBrushPreview();renderColorGrid();});
+hexInputEl.addEventListener("input",e=>{if(/^#[0-9a-fA-F]{6}$/.test(e.target.value)){selectedColor=e.target.value;colorPickerEl.value=e.target.value;updateBrushPreview();renderColorGrid();}});
+renderColorGrid();
+
+// ── BRUSH PREVIEW ─────────────────────────────────────────────────────────────
+
+const brushSizeEl=document.getElementById("brushSize");
+const brushSizeLabel=document.getElementById("brushSizeLabel");
+const brushPreviewDot=document.getElementById("brushPreviewDot");
+let brushSize=5;
+function updateBrushPreview(){
+  const sz=Math.min(brushSize,40);
+  brushPreviewDot.style.width=sz+"px";brushPreviewDot.style.height=sz+"px";
+  brushPreviewDot.style.background=selectedColor;brushSizeLabel.textContent=brushSize+"px";
+}
+brushSizeEl.addEventListener("input",e=>{brushSize=parseInt(e.target.value);updateBrushPreview();updateCursorSize();});
+updateBrushPreview();
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+
+let canvasBg="dark",showGrid=false,scale=1,offsetX=0,offsetY=0;
+let tool="pen",isDrawing=false,isPanning=false,isMoving=false;
+let moveOffset={x:0,y:0},movingElement=null;
+let startX,startY,currentStroke=[];
+let elements=[],undoStack=[],redoStack=[],previewShape=null;
+const fillPreviewEl=document.getElementById("fillPreview");
+const movePreviewEl=document.getElementById("movePreview");
+const coordDisplay=document.getElementById("coordDisplay");
+const elemCount=document.getElementById("elemCount");
+const zoomDisplay=document.getElementById("zoomDisplay");
+const activeToolBadge=document.getElementById("activeToolBadge");
+
+// ── TOOL / BG / GRID ─────────────────────────────────────────────────────────
+
+function setTool(t){
+  tool=t;
+  document.querySelectorAll(".tool-btn").forEach(b=>b.classList.remove("active"));
+  const btn=document.getElementById("btn-"+t);if(btn)btn.classList.add("active");
+  activeToolBadge.textContent=t.toUpperCase();
+  fillPreviewEl.style.display="none";movePreviewEl.style.display="none";
+}
+function setCanvasBg(c){
+  canvasBg=c;canvas.className="bg-"+(c==="white"?"white":c==="black"?"black":"dark");
+  updateCursorCrosshair();draw();
+}
+function toggleGrid(){
+  showGrid=!showGrid;document.getElementById("gridToggle").classList.toggle("on",showGrid);draw();
+}
+
+// ── HIT TESTS ────────────────────────────────────────────────────────────────
+
+function ipr(x,y,el){return x>=Math.min(el.x1,el.x2)&&x<=Math.max(el.x1,el.x2)&&y>=Math.min(el.y1,el.y2)&&y<=Math.max(el.y1,el.y2);}
+function ipc(x,y,el){return Math.hypot(x-el.x1,y-el.y1)<=Math.hypot(el.x2-el.x1,el.y2-el.y1);}
+function ipe(x,y,el){
+  const cx=(el.x1+el.x2)/2,cy=(el.y1+el.y2)/2,rx=Math.abs(el.x2-el.x1)/2||1,ry=Math.abs(el.y2-el.y1)/2||1;
+  return (x-cx)**2/rx**2+(y-cy)**2/ry**2<=1;
+}
+function ipnl(x,y,x1,y1,x2,y2,tol){
+  const A=x-x1,B=y-y1,C=x2-x1,D=y2-y1,dot=A*C+B*D,ls=C*C+D*D;
+  let p=ls!==0?dot/ls:-1;
+  const xx=p<0?x1:p>1?x2:x1+p*C,yy=p<0?y1:p>1?y2:y1+p*D;
+  return Math.hypot(x-xx,y-yy)<=tol;
+}
+function ipt(x,y,el){
+  const mnX=Math.min(el.x1,el.x2),mxX=Math.max(el.x1,el.x2),mnY=Math.min(el.y1,el.y2),mxY=Math.max(el.y1,el.y2);
+  const Ax=(mnX+mxX)/2,Ay=mnY,Bx=mnX,By=mxY,Cx=mxX,Cy=mxY;
+  const v0x=Cx-Ax,v0y=Cy-Ay,v1x=Bx-Ax,v1y=By-Ay,v2x=x-Ax,v2y=y-Ay;
+  const d00=v0x*v0x+v0y*v0y,d01=v0x*v1x+v0y*v1y,d02=v0x*v2x+v0y*v2y;
+  const d11=v1x*v1x+v1y*v1y,d12=v1x*v2x+v1y*v2y,den=d00*d11-d01*d01;
+  if(!den)return false;const inv=1/den,u=(d11*d02-d01*d12)*inv,v=(d00*d12-d01*d02)*inv;
+  return u>=0&&v>=0&&u+v<=1;
+}
+function ipos(x,y,el,tol){
+  for(let i=1;i<el.points.length;++i)if(ipnl(x,y,el.points[i-1].x,el.points[i-1].y,el.points[i].x,el.points[i].y,tol))return true;
+  return false;
+}
+function ippi(x,y,el){return el.points&&el.points.length>=3&&isPointInPolygon(x,y,el.points);}
+function ipd(x,y,el){return isPointInPolygon(x,y,getPolygonPoints(el.x1,el.y1,el.x2,el.y2,4));}
+
+function hitTest(x,y,el){
+  const tol=Math.max(el.size||3,8);
+  if(el.type==="rectangle")return ipr(x,y,el);
+  if(el.type==="circle")return ipc(x,y,el);
+  if(el.type==="ellipse")return ipe(x,y,el);
+  if(el.type==="polygon")return isPointInPolygon(x,y,getPolygonPoints(el.x1,el.y1,el.x2,el.y2,el.sides||5));
+  if(el.type==="star")return isPointInPolygon(x,y,getStarPoints(el.x1,el.y1,el.x2,el.y2,el.points||5));
+  if(el.type==="heart")return ipr(x,y,el);
+  if(el.type==="diamond")return ipd(x,y,el);
+  if(el.type==="triangle")return ipt(x,y,el);
+  if(el.type==="line")return ipnl(x,y,el.x1,el.y1,el.x2,el.y2,tol);
+  if(el.type==="pen"||el.type==="eraser")return ipos(x,y,el,tol);
+  return false;
+}
+function fillHitTest(x,y,el){
+  if(el.type==="pen"&&el.points&&isPenStrokeClosed(el.points))return ippi(x,y,el);
+  return hitTest(x,y,el);
+}
+
+// ── MOUSE ────────────────────────────────────────────────────────────────────
+
+function getMousePos(e){const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left-offsetX)/scale,y:(e.clientY-r.top-offsetY)/scale};}
+
+canvas.addEventListener("mousedown",e=>{
+  if(e.button===1){isPanning=true;return;}
+  const pos=getMousePos(e);startX=pos.x;startY=pos.y;
+
+  if(tool==="move"){
+    for(let i=elements.length-1;i>=0;--i){
+      if(hitTest(pos.x,pos.y,elements[i])){
+        movingElement=elements[i];isMoving=true;moveOffset.x=pos.x;moveOffset.y=pos.y;
+        showMovePreview(elements[i]);cursorEl.style.display="none";document.body.style.cursor="move";break;
+      }
+    }
+    return;
+  }
+
+  if(tool==="fill"){
+    let found=false;
+    for(let i=elements.length-1;i>=0;--i){
+      const el=elements[i];
+      if(fillHitTest(pos.x,pos.y,el)){
+        if(el.type==="line"||el.type==="pen"&&!isPenStrokeClosed(el.points))el.strokeColor=selectedColor;
+        else el.fillColor=selectedColor;
+        found=true;break;
+      }
+    }
+    if(found){undoStack.push(JSON.stringify(elements));redoStack=[];}
+    draw();return;
+  }
+
+  isDrawing=true;previewShape=null;
+  if(tool==="pen"||tool==="eraser"){
+    currentStroke=[{x:pos.x,y:pos.y}];
+    elements.push({type:tool,points:currentStroke,size:brushSize,color:selectedColor,isClosed:false});
+  }
+});
+
+canvas.addEventListener("mousemove",e=>{
+  moveCursor(e);
+  const pos=getMousePos(e);
+  coordDisplay.textContent=Math.round(pos.x)+", "+Math.round(pos.y);
+
+  if(isPanning){offsetX+=e.movementX;offsetY+=e.movementY;draw();fillPreviewEl.style.display="none";movePreviewEl.style.display="none";return;}
+  if(tool==="move"&&isMoving&&movingElement){
+    const dx=pos.x-moveOffset.x,dy=pos.y-moveOffset.y;
+    moveElementPreview(movingElement,dx,dy);showMovePreview(movingElement,dx,dy);return;
+  }
+  if(tool==="fill"){
+    let show=false;
+    for(let i=elements.length-1;i>=0;--i)if(fillHitTest(pos.x,pos.y,elements[i])){show=true;break;}
+    fillPreviewEl.style.display=show?"block":"none";return;
+  } else fillPreviewEl.style.display="none";
+
+  if(!isDrawing)return;
+  if(tool==="pen"||tool==="eraser"){currentStroke.push({x:pos.x,y:pos.y});draw();}
+  else if(["rectangle","circle","line","triangle","ellipse","polygon","star","diamond","heart"].includes(tool)){
+    previewShape={type:tool,x1:startX,y1:startY,x2:pos.x,y2:pos.y,size:brushSize,color:selectedColor};
+    if(tool==="polygon")previewShape.sides=5;if(tool==="star")previewShape.points=5;draw();
+  }
+});
+
+canvas.addEventListener("mouseup",e=>{
+  if(isPanning){isPanning=false;return;}
+  if(isMoving&&tool==="move"&&movingElement){
+    const pos=getMousePos(e);finalizeMove(movingElement,pos.x-moveOffset.x,pos.y-moveOffset.y);
+    movePreviewEl.style.display="none";undoStack.push(JSON.stringify(elements));redoStack=[];
+    movingElement=null;isMoving=false;cursorEl.style.display="block";document.body.style.cursor="";draw();return;
+  }
+  if(!isDrawing)return;
+  const pos=getMousePos(e);
+  if(["rectangle","circle","line","triangle","ellipse","polygon","star","diamond","heart"].includes(tool)){
+    const el={type:tool,x1:startX,y1:startY,x2:pos.x,y2:pos.y,size:brushSize,color:selectedColor};
+    if(tool==="polygon")el.sides=5;if(tool==="star")el.points=5;
+    elements.push(el);previewShape=null;
+  } else if(tool==="pen"){
+    const el=elements[elements.length-1];
+    if(el&&el.type==="pen"&&el.points&&el.points.length>=3)el.isClosed=isPenStrokeClosed(el.points);
+  }
+  undoStack.push(JSON.stringify(elements));redoStack=[];isDrawing=false;
+  elemCount.textContent=elements.length+" element"+(elements.length!==1?"s":"");
+  draw();
+});
+
+// ── MOVE HELPERS ─────────────────────────────────────────────────────────────
+
+function showMovePreview(el,dx=0,dy=0){
+  let mnX,mnY,mxX,mxY;
+  if(["rectangle","triangle","polygon","diamond","ellipse","heart","star","line"].includes(el.type)){
+    mnX=Math.min(el.x1,el.x2)+dx;mxX=Math.max(el.x1,el.x2)+dx;mnY=Math.min(el.y1,el.y2)+dy;mxY=Math.max(el.y1,el.y2)+dy;
+  }else if(el.type==="circle"){const r=Math.hypot(el.x2-el.x1,el.y2-el.y1);mnX=el.x1-r+dx;mxX=el.x1+r+dx;mnY=el.y1-r+dy;mxY=el.y1+r+dy;}
+  else if(el.type==="pen"||el.type==="eraser"){const xs=el.points.map(p=>p.x+dx),ys=el.points.map(p=>p.y+dy);mnX=Math.min(...xs);mxX=Math.max(...xs);mnY=Math.min(...ys);mxY=Math.max(...ys);}
+  const rect=canvas.getBoundingClientRect();
+  movePreviewEl.style.left=(mnX*scale+offsetX+rect.left)+"px";movePreviewEl.style.top=(mnY*scale+offsetY+rect.top)+"px";
+  movePreviewEl.style.width=((mxX-mnX)*scale)+"px";movePreviewEl.style.height=((mxY-mnY)*scale)+"px";
+  movePreviewEl.style.display="block";
+}
+function moveElementPreview(el,dx,dy){
+  if(["rectangle","triangle","polygon","ellipse","diamond","heart","star","line","circle"].includes(el.type))el._mp={dx,dy};
+  else if(el.type==="pen"||el.type==="eraser")el._mpp=el.points.map(p=>({x:p.x+dx,y:p.y+dy}));
+  draw();
+}
+function finalizeMove(el,dx,dy){
+  if(["rectangle","triangle","polygon","ellipse","diamond","heart","star","line","circle"].includes(el.type)){el.x1+=dx;el.y1+=dy;el.x2+=dx;el.y2+=dy;delete el._mp;}
+  else if(el.type==="pen"||el.type==="eraser"){el.points=el.points.map(p=>({x:p.x+dx,y:p.y+dy}));delete el._mpp;}
+}
+
+// ── ZOOM ─────────────────────────────────────────────────────────────────────
+
+canvas.addEventListener("wheel",e=>{
+  e.preventDefault();
+  const z=e.deltaY<0?1.1:0.9,r=canvas.getBoundingClientRect();
+  const mx=e.clientX-r.left,my=e.clientY-r.top;
+  offsetX=mx-(mx-offsetX)*z;offsetY=my-(my-offsetY)*z;scale*=z;
+  zoomDisplay.textContent=Math.round(scale*100)+"%";updateCursorSize();draw();
+},{passive:false});
+
+// ── DRAW ─────────────────────────────────────────────────────────────────────
+
+function drawGrid(){
+  const gs=40,ss=gs*scale,sx=offsetX%ss,sy=offsetY%ss;
+  const dark=canvasBg==="dark"||canvasBg==="black";
+  ctx.beginPath();ctx.strokeStyle=dark?"rgba(255,255,255,0.05)":"rgba(0,0,0,0.07)";ctx.lineWidth=1;
+  for(let x=sx;x<canvas.width;x+=ss){ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);}
+  for(let y=sy;y<canvas.height;y+=ss){ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);}
+  ctx.stroke();
+}
+function drawTriangle(ctx,x1,y1,x2,y2,fill=null){
+  const mnX=Math.min(x1,x2),mxX=Math.max(x1,x2),mnY=Math.min(y1,y2),mxY=Math.max(y1,y2);
+  ctx.beginPath();ctx.moveTo((mnX+mxX)/2,mnY);ctx.lineTo(mxX,mxY);ctx.lineTo(mnX,mxY);ctx.closePath();
+  if(fill){ctx.save();ctx.fillStyle=fill;ctx.globalAlpha=1;ctx.fill();ctx.restore();}ctx.stroke();
+}
+
+function drawEl(el){
+  const dark=canvasBg==="dark"||canvasBg==="black";
+  ctx.lineWidth=el.size/scale||2;
+  ctx.strokeStyle=el.type==="eraser"?(dark?"#111316":canvasBg):(el.strokeColor||el.color||"#000");
+  ctx.lineCap="round";
+  const usePrev=tool==="move"&&isMoving&&movingElement===el&&(el._mp||el._mpp);
+  let x1=el.x1,y1=el.y1,x2=el.x2,y2=el.y2;
+  if(usePrev&&el._mp){x1+=el._mp.dx;y1+=el._mp.dy;x2+=el._mp.dx;y2+=el._mp.dy;el={...el,x1,y1,x2,y2};}
+  if(el.type==="pen"||el.type==="eraser"){
+    const pts=usePrev&&el._mpp?el._mpp:el.points;
+    ctx.beginPath();pts.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y));
+    if(el.type==="pen"&&el.points&&el.isClosed&&el.fillColor&&el.points.length>2){
+      ctx.closePath();ctx.save();ctx.fillStyle=el.fillColor;ctx.globalAlpha=1;ctx.fill();ctx.restore();
+    }
+    el.strokeColor?(ctx.save(),ctx.strokeStyle=el.strokeColor,ctx.stroke(),ctx.restore()):ctx.stroke();
+  }else if(el.type==="rectangle"){
+    if(el.fillColor){ctx.save();ctx.fillStyle=el.fillColor;ctx.globalAlpha=1;ctx.fillRect(x1,y1,x2-x1,y2-y1);ctx.restore();}
+    ctx.strokeRect(x1,y1,x2-x1,y2-y1);
+  }else if(el.type==="circle"){
+    const r=Math.hypot(x2-x1,y2-y1);ctx.beginPath();ctx.arc(x1,y1,r,0,Math.PI*2);
+    if(el.fillColor){ctx.save();ctx.fillStyle=el.fillColor;ctx.globalAlpha=1;ctx.fill();ctx.restore();}ctx.stroke();
+  }else if(el.type==="line"){
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);
+    el.strokeColor?(ctx.save(),ctx.strokeStyle=el.strokeColor,ctx.stroke(),ctx.restore()):ctx.stroke();
+  }else if(el.type==="triangle"){
+    drawTriangle(ctx,x1,y1,x2,y2,el.fillColor||null);
+  }else if(["ellipse","polygon","star","heart","diamond"].includes(el.type)){
+    drawCustomShape(ctx,el,el.fillColor||null);
+  }
+}
+
+function draw(){
+  ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);
+  if(showGrid)drawGrid();
+  ctx.setTransform(scale,0,0,scale,offsetX,offsetY);
+  elements.forEach(drawEl);
+  if(previewShape){
+    ctx.save();ctx.lineWidth=previewShape.size/scale;ctx.strokeStyle=previewShape.color;
+    ctx.setLineDash([5/scale,5/scale]);ctx.lineCap="round";
+    if(previewShape.type==="rectangle")ctx.strokeRect(previewShape.x1,previewShape.y1,previewShape.x2-previewShape.x1,previewShape.y2-previewShape.y1);
+    else if(previewShape.type==="circle"){const r=Math.hypot(previewShape.x2-previewShape.x1,previewShape.y2-previewShape.y1);ctx.beginPath();ctx.arc(previewShape.x1,previewShape.y1,r,0,Math.PI*2);ctx.stroke();}
+    else if(previewShape.type==="line"){ctx.beginPath();ctx.moveTo(previewShape.x1,previewShape.y1);ctx.lineTo(previewShape.x2,previewShape.y2);ctx.stroke();}
+    else if(previewShape.type==="triangle")drawTriangle(ctx,previewShape.x1,previewShape.y1,previewShape.x2,previewShape.y2);
+    else if(["ellipse","polygon","star","heart","diamond"].includes(previewShape.type))drawCustomShape(ctx,previewShape);
+    ctx.setLineDash([]);ctx.restore();
+  }
+}
+
+// ── ACTIONS ──────────────────────────────────────────────────────────────────
+
+function undo(){if(!undoStack.length)return;redoStack.push(JSON.stringify(elements));elements=JSON.parse(undoStack.pop());elemCount.textContent=elements.length+" element"+(elements.length!==1?"s":"");draw();}
+function redo(){if(!redoStack.length)return;undoStack.push(JSON.stringify(elements));elements=JSON.parse(redoStack.pop());elemCount.textContent=elements.length+" element"+(elements.length!==1?"s":"");draw();}
+function clearCanvas(){undoStack.push(JSON.stringify(elements));elements=[];elemCount.textContent="0 elements";draw();}
+function saveImage(){
+  const bgMap={dark:"#111316",white:"#ffffff",black:"#000000"};
+  const tmp=document.createElement("canvas");tmp.width=canvas.width;tmp.height=canvas.height;
+  const tc=tmp.getContext("2d");tc.fillStyle=bgMap[canvasBg]||"#111316";tc.fillRect(0,0,tmp.width,tmp.height);tc.drawImage(canvas,0,0);
+  const link=document.createElement("a");link.download="canvas-export.png";link.href=tmp.toDataURL();link.click();
+}
+
+// ── CUSTOM CURSOR ────────────────────────────────────────────────────────────
+
+const cursorEl=document.createElement("div");cursorEl.className="custom-cursor";
+const cursorCvs=document.createElement("canvas");
+cursorCvs.style.cssText="display:block;position:absolute;top:0;left:0;pointer-events:none;";
+cursorEl.appendChild(cursorCvs);document.body.appendChild(cursorEl);
+
+function drawCursorCrosshair(){
+  const sz=Math.max(brushSize*scale,8),center=cursorCvs.width/2;
+  const c2=cursorCvs.getContext("2d");c2.clearRect(0,0,cursorCvs.width,cursorCvs.height);
+  c2.save();c2.strokeStyle="#4f9eff";c2.lineWidth=1.5;
+  c2.beginPath();c2.arc(center,center,sz/2,0,Math.PI*2);c2.stroke();c2.restore();
+  c2.save();c2.strokeStyle="#4f9eff88";c2.lineWidth=1;
+  const cl=Math.max(sz/2,10);
+  c2.beginPath();c2.moveTo(center-cl,center);c2.lineTo(center+cl,center);c2.stroke();
+  c2.beginPath();c2.moveTo(center,center-cl);c2.lineTo(center,center+cl);c2.stroke();c2.restore();
+}
+function updateCursorCrosshair(){drawCursorCrosshair();}
+function moveCursor(e){
+  cursorEl.style.left=e.clientX+"px";cursorEl.style.top=e.clientY+"px";
+  fillPreviewEl.style.left=e.clientX+"px";fillPreviewEl.style.top=e.clientY+"px";
+}
+function updateCursorSize(){
+  const px=Math.ceil(Math.max(brushSize*scale,8)),pad=20,s=px+pad;
+  cursorCvs.width=s;cursorCvs.height=s;
+  cursorCvs.style.marginLeft=(-s/2)+"px";cursorCvs.style.marginTop=(-s/2)+"px";
+  updateCursorCrosshair();
+}
+updateCursorSize();
+canvas.addEventListener("mouseenter",()=>{if(!(tool==="move"&&isMoving))cursorEl.style.display="block";});
+canvas.addEventListener("mouseleave",()=>{cursorEl.style.display="none";fillPreviewEl.style.display="none";movePreviewEl.style.display="none";});
+
+draw();
+</script>
+</body>
+</html>
